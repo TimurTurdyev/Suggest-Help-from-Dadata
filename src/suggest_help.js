@@ -9,440 +9,277 @@
  * ======================================================================= *
  * =======================================================================**/
 
-var UserDadata = function (object) {
-    this.input = {};
-    this.make_keys = {}
-    this.flags = {};
-    // Record the current name of the event form
-    this.switch = '';
+var KEY_ENTER = 13;
+var KEY_UP = 38;
+var KEY_DOWN = 40;
 
+// Подсказки DaData для полей формы. Каждый блок - это поле ввода со своим выпадающим списком;
+// выбранная подсказка раскладывается по полям формы из fields согласно fill.
+function DadataSuggest(options) {
+    this.fields = {};
+    this.blocks = {};
+    this.active = null;
+    this.onSelect = options.onSelect || function () {};
 
-    for (var key in object) {
-        if (object.hasOwnProperty(key)) {
-            var element = object[key];
-            switch (key) {
-                case 'country':
-                    // Validate Country. Russian default = 176
-                    if (!this.countryValidate(element)) return;
-                    break;
+    if (options.country && !this.isCountrySelected(options.country)) return;
 
-                case 'make_keys':
-                    // References to the form name, address or all elements
-                    this[key] = object[key];
-                    break;
+    this.findFields(options.fields || {});
 
-                case 'input':
-                    // Create address or name... or may be all at once (input/textarea)
-                    this.newItems(key, object[key]);
-                    break;
-                case 'reload':
-                    this.reloadValue(object[key]);
-                    break;
-                // Custom callback is called in the changeState method
-                case 'callback':
-                    this.callback = object[key];
-                    break;
-
-                case 'insert':
-                    // Send items to doom
-                    this.insertItems(object[key]);
-                    break;
-                default:
-
-                    if (typeof object[key] == 'string') {
-                        this[key] = document.querySelector(object[key]);
-                        break;
-                    }
-
-                    if (typeof object[key] == 'function') {
-                        object[key](this);
-                    }
-
-            }
-        }
-    }
-    //console.log(this)
-}
-
-UserDadata.prototype.reloadValue = function (obj) {
     var self = this;
-    //console.log(obj)
-    try {
-        for (var key in obj) {
-            var word = [];
 
-            if (typeof obj[key] == 'string') {
+    Object.keys(options.blocks || {}).forEach(function (name) {
+        var block = self.createBlock(name, options.blocks[name]);
 
-                var localValue = localStorage.getItem(obj[key]);
-                if (localValue) word.push(localValue);
-
-            } else {
-
-                if (typeof obj[key] == 'function') {
-                    var Func = obj[key];
-
-                    Func(self);
-                    continue;
-                }
-
-                obj[key].forEach(function (name) {
-
-                    if (typeof name == 'function') {
-                        var Func = name;
-
-                        Func(self);
-                        return;
-                    }
-
-                    if (self[name].value) {
-                        word.push(self[name].value);
-                        //console.log(word)
-                    }
-
-                });
-
-            }
-
-            word = word.join(', ');
-
-            if (key != 'address') {
-                word = word.replace(/,/g, '');
-            }
-
-            self.input[key].querySelector('input, textarea').value = word;
+        if (block) {
+            self.blocks[name] = block;
+            self.bindBlock(block);
         }
-    } catch (e) {
-        console.error(e);
-    }
-
-}
-
-UserDadata.prototype.countryValidate = function (args) {
-    if (typeof args == "boolean") {
-        return true;
-    }
-
-    if (typeof args == 'object') {
-        var element = document.querySelector(args[0]);
-        if (element && element.value == args[1]) return true;
-    }
-    console.error('Country not selected Russian Federation')
-    return false;
-}
-
-UserDadata.prototype.newItems = function (metod, object) {
-    // References to the form name, address or all elements
-    for (var name in object) {
-        if (object.hasOwnProperty(name)) {
-            var item = object[name];
-            this[metod][name] = this.create(item[0], item[1], item[2]);
-        }
-    }
-}
-
-UserDadata.prototype.insertItems = function (object) {
-    for (var key in object) {
-        if (object.hasOwnProperty(key)) {
-            //console.log(object[key])
-            var array = object[key];
-            var findElement = undefined, prevBlock = '';
-
-            array.forEach(element => {
-                var block = element[0],
-                    name = element[1],
-                    hide = element[2];
-
-                if (!hide) {
-                    hide = false;
-                }
-
-                if (prevBlock !== block) {
-                    prevBlock = block;
-                    findElement = document.querySelector(block);
-                }
-                if (!findElement) return;
-                var EL = this.input[name].querySelector('input, textarea');
-
-                var throttling = this.debounce(this.setEventsInput, 200);
-                EL.addEventListener('input', throttling.bind(this), false);
-                EL.addEventListener('focus', this.setEventsFocus.bind(this, name), false);
-                EL.addEventListener('keydown', this.setEventsKeyUpKeyDown.bind(this), false);
-                EL.nextElementSibling.addEventListener('click', this.setResultEvent.bind(this), false);
-
-                switch (key) {
-                    case 'before':
-                        findElement.parentElement.insertBefore(this.input[name], findElement);
-                        findElement.hidden = hide;
-                        break;
-
-                    case 'after':
-                        findElement.parentElement.insertBefore(this.input[name], findElement.nextSibling);
-                        findElement.hidden = hide;
-                        break;
-
-                    case 'append':
-                        findElement.appendChild(this.input[name]);
-                        break;
-
-                    default:
-                        console.error('No add method defined for new item this.input["' + name + '"]');
-                }
-            });
-        }
-    }
-}
-
-UserDadata.prototype.setEventsInput = function (event) {
-
-    var query = event.target.value;
-    if (event.data === ' ' /*|| event.data === null*/) return;
-    var self = this;
-    this.requestDadata(this.switch, query, function (data) {
-        if (!data) return;
-        // flag for the keypress event. This works when you switch to hide and vice versa.
-        self.flags[self.switch] = {
-            HEIGHT: 0,
-            INDEX: -1,
-            VALUE: query,
-            DATA: data
-        }
-
-        var list = '';
-
-        data.forEach((suggest, i) => {
-            list += '<li class="child" data-index="' + i + '">' + suggest.value + '</li>';
-        });
-        //console.log(this.input[this.switch])
-        self.input[self.switch].querySelector('.js_suggest').children[0].innerHTML = list;
-
     });
 }
 
-UserDadata.prototype.setEventsFocus = function (name) {
-    // Switch the result of the previous block to hidden
-    if (this.switch) {
-        this.input[this.switch].querySelector('.js_suggest').hidden = true;
-    }
-    // Record the current name of the event form
-    this.switch = name;
+// country: {select: селектор списка стран, value: id страны}; подсказки работают только для нее.
+DadataSuggest.prototype.isCountrySelected = function (country) {
+    var select = document.querySelector(country.select);
 
-    var target = event.target.nextElementSibling;
-    target.hidden = false;
+    return !!select && select.value == country.value;
+};
 
-}
+DadataSuggest.prototype.findFields = function (selectors) {
+    var self = this;
 
-UserDadata.prototype.setEventsKeyUpKeyDown = function () {
-    if (event.keyCode != 40 && event.keyCode != 38 && event.keyCode != 13) return;
-
-    var target = event.target.nextElementSibling;
-    var items = target.getElementsByClassName('child');
-    var count = items.length - 1;
-
-    if (count < 0) return;
-
-    var ELEMENT = event.target;
-    var CHILDS = target.children[0];
-
-    var VIEW = CHILDS.scrollHeight - CHILDS.getBoundingClientRect().height; // Get the height of the hidden part
-
-    var h = this.flags[this.switch].HEIGHT;
-    var i = this.flags[this.switch].INDEX;
-
-    switch (event.keyCode) {
-        case 13:
-            event.preventDefault(); // Cancel newline event
-            if (i < 0) break;
-            this.flags[this.switch].VALUE = items[i].textContent;
-            items[i].click();
-            //event.target.blur();
-            break;
-
-        case 38:
-            event.preventDefault(); // Cancel event move cursor to start
-
-            i -= 1;
-            if (VIEW > 0) {
-                if (i >= 0) {
-                    h -= items[i].getBoundingClientRect().height
-                }
-
-                CHILDS.scrollTop = h;
-            }
-
-            if (i < 0) {
-                i = -1;
-                items[0].classList.remove('selected');
-                ELEMENT.value = this.flags[this.switch].VALUE;
-            } else {
-                if (i < count) items[i + 1].classList.remove('selected');
-                items[i].classList.add('selected');
-                ELEMENT.value = items[i].textContent;
-            }
-
-            break;
-
-        case 40:
-            i < count ? i++ : i;
-            if (VIEW > 0 && h <= VIEW && i > 0) {
-                h += items[i].getBoundingClientRect().height;
-                CHILDS.scrollTop = h;
-            }
-
-            if (i > count) {
-                i = count;
-                items[i - 1].classList.remove('selected');
-
-            } else {
-                if (i > 0) items[i - 1].classList.remove('selected');
-                items[i].classList.add('selected');
-                ELEMENT.value = items[i].textContent;
-            }
-
-            break;
-    }
-
-    this.flags[this.switch].INDEX = i;
-    this.flags[this.switch].HEIGHT = h;
-}
-
-UserDadata.prototype.findDadata = function (data) {
-    return function (props) {
-
-        if (typeof props == 'string') return data[props];
-        if (typeof props == 'function') return props(data);
-
-        var arr_1 = [];
-
-        props.forEach(function (x) {
-            //console.log(x, data.data[x])
-
-            if (typeof x === 'string') {
-                if (data.data.hasOwnProperty(x) && data.data[x]) {
-                    arr_1.push(data.data[x]);
-                }
-                return;
-            }
-
-            var arr_2 = [];
-            x.forEach(function (xx) {
-                if (data.data.hasOwnProperty(xx) && data.data[xx]) {
-                    arr_2.push(data.data[xx]);
-                }
-            })
-
-            if (arr_2.length) {
-                arr_1.push(arr_2.join(' '));
-            }
-        });
-
-        if (arr_1.length) return arr_1.join(', ');
-
-        return '';
-    }
-
-}
-
-UserDadata.prototype.setResultEvent = function () {
-    event.preventDefault();
-    var target = event.target;
-    var flag = this.switch;
-
-    if (target.tagName === 'LI') {
-
-        this.input[flag].querySelector('.js_suggest').hidden = true;
-        this.input[flag].querySelector('input, textarea').value = target.textContent;
-
-        var index = target.getAttribute('data-index');
-        var thisValue = this.findDadata(this.flags[flag].DATA[index]);
-
-        this.ChangeState(flag, thisValue);
-    }
-    if (target.tagName === 'BUTTON' || target.tagName === 'I') {
-        this.input[flag].querySelector('.js_suggest').hidden = true;
-    }
-}
-
-UserDadata.prototype.ChangeState = function (flag, thisValue) {
-
-    var object = this.make_keys[flag];
-    for (var key in object) {
-        if (!object.hasOwnProperty(key)) continue;
-
-        var element = object[key];
-
-        if (this[key].type !== 'select-one') {
-            this[key].value = thisValue(element);
-
-            continue;
-        }
-
-        var region = thisValue(element).replace(/\s{0,1}[-\/].+/gi, '').toLowerCase();
-        var selectOptions = this[key].options;
-
-        var find = false;
-        var i = selectOptions.length - 1;
-        for (; i >= 0; i--) {
-            //console.log(selectOptions[i].textContent.toLowerCase() + ' => ' + region)
-            if (selectOptions[i].textContent.toLowerCase().search(region) < 0) continue;
-            selectOptions[i].selected = find = true;
-        }
-        if (!find) selectOptions[0].selected = true;
-    }
-
-    if (this.callback) {
-        var self = this;
-        this.callback.forEach(function (Func) {
-            Func(self, thisValue);
-        })
-    }
-
-}
-
-UserDadata.prototype.create = function (tag, props, child) {
-    var element = document.createElement(tag);
-    Object.keys(props).forEach(function (key) {
-        element[key] = props[key]
+    Object.keys(selectors).forEach(function (alias) {
+        self.fields[alias] = document.querySelector(selectors[alias]);
     });
-    if (child) {
-        element.innerHTML = child;
-    }
-    return element;
-}
+};
 
-UserDadata.prototype.requestDadata = function (param, query, callback) {
-    var xhr = new XMLHttpRequest();
-    param = '&name=' + param + '&suggest=' + encodeURIComponent(query);
-    xhr.open('GET', 'index.php?route=extension/module/suggest_help/help_dadata' + param);
-    //console.log(param)
-    xhr.onload = function () {
-        if (xhr.status === 200) {
-            var json = JSON.parse(xhr.response);
-            //console.log(json)
-            callback(json.suggestions);
-        } else {
-            console.log(xhr.statusText);
-            callback(false);
-        }
+// Блок ставится рядом с элементом place: {before|after|append: селектор, hideTarget: спрятать этот элемент}.
+DadataSuggest.prototype.createBlock = function (name, config) {
+    var position = ['before', 'after', 'append'].filter(function (key) {
+        return config.place && config.place[key];
+    })[0];
+    var target = position ? document.querySelector(config.place[position]) : null;
+
+    if (!target) return null;
+
+    var wrapper = document.createElement('div');
+    wrapper.innerHTML = config.html;
+
+    var element = wrapper.firstElementChild;
+
+    if (position === 'append') {
+        target.appendChild(element);
+    } else {
+        target.parentElement.insertBefore(element, position === 'before' ? target : target.nextSibling);
+        target.hidden = !!config.place.hideTarget;
+    }
+
+    var block = {
+        name: name,
+        type: config.type || name,
+        fill: config.fill || {},
+        input: element.querySelector('input, textarea'),
+        dropdown: element.querySelector('.js_suggest'),
+        query: '',
+        suggestions: [],
+        index: -1
     };
 
-    xhr.onerror = function (error) {
-        console.log(error);
-        callback(false);
+    block.list = block.dropdown.querySelector('ul');
+    block.input.value = this.prefillText(name, config.prefill);
+
+    return block;
+};
+
+// prefill: ключ localStorage или список полей формы, из которых собирается начальный текст.
+DadataSuggest.prototype.prefillText = function (name, prefill) {
+    var self = this;
+
+    if (!prefill) return '';
+
+    if (typeof prefill === 'string') {
+        return localStorage.getItem(prefill) || '';
+    }
+
+    var words = prefill.map(function (alias) {
+        return self.fields[alias] ? self.fields[alias].value : '';
+    }).filter(Boolean);
+
+    return words.join(name === 'address' ? ', ' : ' ');
+};
+
+DadataSuggest.prototype.bindBlock = function (block) {
+    var self = this;
+
+    block.input.addEventListener('input', this.debounce(function () {
+        self.search(block, block.input.value);
+    }, 200), false);
+
+    block.input.addEventListener('focus', function () {
+        self.open(block);
+    }, false);
+
+    block.input.addEventListener('keydown', function (event) {
+        self.handleKey(block, event);
+    }, false);
+
+    block.dropdown.addEventListener('click', function (event) {
+        self.handleClick(block, event);
+    }, false);
+};
+
+DadataSuggest.prototype.search = function (block, query) {
+    var self = this;
+
+    if (query.trim() === block.query.trim()) return;
+
+    this.request(block.type, query, function (suggestions) {
+        block.query = query;
+        block.suggestions = suggestions;
+        block.index = -1;
+        self.render(block);
+    });
+};
+
+DadataSuggest.prototype.render = function (block) {
+    block.list.innerHTML = block.suggestions.map(function (suggest, index) {
+        return '<li class="child" data-index="' + index + '">' + suggest.value + '</li>';
+    }).join('');
+    block.list.scrollTop = 0;
+};
+
+// Открытым может быть только один список: при фокусе на другом блоке прошлый прячется.
+DadataSuggest.prototype.open = function (block) {
+    if (this.active && this.active !== block) {
+        this.close(this.active);
+    }
+
+    this.active = block;
+    block.dropdown.hidden = false;
+};
+
+DadataSuggest.prototype.close = function (block) {
+    block.dropdown.hidden = true;
+};
+
+DadataSuggest.prototype.handleKey = function (block, event) {
+    if (!block.suggestions.length) return;
+
+    switch (event.keyCode) {
+        case KEY_DOWN:
+            event.preventDefault();
+            this.highlight(block, block.index + 1);
+            break;
+        case KEY_UP:
+            event.preventDefault();
+            this.highlight(block, block.index - 1);
+            break;
+        case KEY_ENTER:
+            if (block.index < 0) return;
+            event.preventDefault();
+            this.choose(block, block.index);
+            break;
+    }
+};
+
+DadataSuggest.prototype.handleClick = function (block, event) {
+    var target = event.target;
+
+    if (target.tagName === 'LI') {
+        this.choose(block, Number(target.getAttribute('data-index')));
+    } else if (target.tagName === 'BUTTON' || target.tagName === 'I') {
+        this.close(block);
+    }
+};
+
+// index -1 снимает выделение и возвращает в поле то, что вводил пользователь.
+DadataSuggest.prototype.highlight = function (block, index) {
+    var items = block.list.children;
+
+    index = Math.min(Math.max(index, -1), items.length - 1);
+
+    if (items[block.index]) {
+        items[block.index].classList.remove('selected');
+    }
+
+    block.index = index;
+
+    if (index < 0) {
+        block.input.value = block.query;
+        return;
+    }
+
+    items[index].classList.add('selected');
+    block.input.value = block.suggestions[index].value;
+};
+
+DadataSuggest.prototype.choose = function (block, index) {
+    var suggest = block.suggestions[index];
+    var pick = this.picker(suggest);
+
+    this.close(block);
+    block.input.value = suggest.value;
+    block.query = suggest.value;
+
+    this.fillFields(block.fill, pick);
+    this.onSelect(pick, suggest, block);
+};
+
+// fill: {поле формы: что взять из подсказки}. Строка - поле подсказки целиком (value, unrestricted_value),
+// массив - поля из data через ", ", вложенный массив - через пробел, функция - своя выборка.
+DadataSuggest.prototype.picker = function (suggest) {
+    var data = suggest.data || {};
+
+    var field = function (key) {
+        return data[key] || '';
+    };
+
+    return function pick(keys) {
+        if (typeof keys === 'function') return keys(suggest);
+        if (typeof keys === 'string') return suggest[keys] || '';
+
+        return keys.map(function (key) {
+            return Array.isArray(key) ? key.map(field).filter(Boolean).join(' ') : field(key);
+        }).filter(Boolean).join(', ');
+    };
+};
+
+DadataSuggest.prototype.fillFields = function (fill, pick) {
+    var self = this;
+
+    Object.keys(fill).forEach(function (alias) {
+        var element = self.fields[alias];
+
+        if (!element) return;
+
+        element.value = pick(fill[alias]);
+    });
+};
+
+DadataSuggest.prototype.request = function (type, query, onSuccess) {
+    var xhr = new XMLHttpRequest();
+
+    xhr.open('GET', 'index.php?route=extension/module/suggest_help/help_dadata'
+        + '&name=' + encodeURIComponent(type)
+        + '&suggest=' + encodeURIComponent(query));
+
+    xhr.onload = function () {
+        if (xhr.status !== 200) return;
+
+        try {
+            onSuccess(JSON.parse(xhr.responseText).suggestions || []);
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     xhr.send();
-}
+};
 
-UserDadata.prototype.debounce = function (f, ms) {
+DadataSuggest.prototype.debounce = function (fn, ms) {
     var timer = null;
-    return function (...args) {
-        var onComplete = () => {
-            f.apply(this, args);
-            timer = null;
-        }
-        if (timer) {
-            clearTimeout(timer);
-        }
-        timer = setTimeout(onComplete, ms);
+
+    return function () {
+        clearTimeout(timer);
+        timer = setTimeout(fn, ms);
     };
-}
+};
