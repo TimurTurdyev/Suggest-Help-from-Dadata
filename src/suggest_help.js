@@ -251,8 +251,26 @@ DadataSuggest.prototype.fillFields = function (fill, pick) {
 
         if (!element) return;
 
-        element.value = pick(fill[alias]);
+        if (element.tagName === 'SELECT') {
+            self.selectByText(element, pick(fill[alias]));
+        } else {
+            element.value = pick(fill[alias]);
+        }
     });
+};
+
+// Регион сравнивается с пунктами списка без хвоста вроде " - край" или "/Якутия"; не нашли - первый пункт.
+DadataSuggest.prototype.selectByText = function (select, text) {
+    var needle = text.replace(/\s?[-\/].+/g, '').toLowerCase();
+
+    for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].textContent.toLowerCase().indexOf(needle) !== -1) {
+            select.selectedIndex = i;
+            return;
+        }
+    }
+
+    select.selectedIndex = 0;
 };
 
 DadataSuggest.prototype.request = function (type, query, onSuccess) {
