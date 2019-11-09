@@ -141,8 +141,10 @@ DadataSuggest.prototype.search = function (block, query) {
 };
 
 DadataSuggest.prototype.render = function (block) {
+    var self = this;
+
     block.list.innerHTML = block.suggestions.map(function (suggest, index) {
-        return '<li class="child" data-index="' + index + '">' + suggest.value + '</li>';
+        return '<li class="child" data-index="' + index + '">' + self.escapeHtml(suggest.value) + '</li>';
     }).join('');
     block.list.scrollTop = 0;
 };
@@ -291,6 +293,14 @@ DadataSuggest.prototype.request = function (type, query, onSuccess) {
     };
 
     xhr.send();
+};
+
+DadataSuggest.prototype.escapeHtml = function (text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 };
 
 DadataSuggest.prototype.debounce = function (fn, ms) {
