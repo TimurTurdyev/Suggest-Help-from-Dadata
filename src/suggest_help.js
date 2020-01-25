@@ -212,6 +212,18 @@ DadataSuggest.prototype.highlight = function (block, index) {
 
     items[index].classList.add('selected');
     block.input.value = block.suggestions[index].value;
+    this.scrollIntoList(block.list, items[index]);
+};
+
+DadataSuggest.prototype.scrollIntoList = function (list, item) {
+    var listRect = list.getBoundingClientRect();
+    var itemRect = item.getBoundingClientRect();
+
+    if (itemRect.top < listRect.top) {
+        list.scrollTop -= listRect.top - itemRect.top;
+    } else if (itemRect.bottom > listRect.bottom) {
+        list.scrollTop += itemRect.bottom - listRect.bottom;
+    }
 };
 
 DadataSuggest.prototype.choose = function (block, index) {
